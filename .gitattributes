@@ -1,0 +1,6 @@
+# The repo lives on a Windows drive but is built inside WSL. Force LF so that
+# Windows editors and git autocrlf cannot break shell scripts or the SDF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.dae binary

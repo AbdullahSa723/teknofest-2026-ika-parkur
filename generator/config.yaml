@@ -1,0 +1,364 @@
+# =============================================================================
+#  TEKNOFEST 2026 - Insansiz Kara Araci Yarismasi
+#  Parkur dimensions, transcribed from the official sartname (v1.2, 14.04.2026).
+#  Every value below carries the sartname section it came from. If a value has
+#  no section reference it is OUR choice, because the sartname did not specify
+#  it (Sekil 1 is an undimensioned draft sketch).
+# =============================================================================
+
+meta:
+  world_name: ika_parkur
+  sartname_version: "1.2"
+
+# --- Solver ------------------------------------------------------------------
+# 2 ms is a compromise: small enough that the 15 cm vertical block and the
+# trapezoid bumps resolve cleanly, large enough not to melt a laptop. Drop to
+# 0.001 if you see the vehicle tunnelling through the block.
+physics:
+  max_step_size: 0.002
+  real_time_factor: 1.0
+  gravity: -9.8066
+
+# --- Rendering ---------------------------------------------------------------
+# ogre2 needs OpenGL 3.3+. Under WSLg that comes from the Mesa d3d12 driver and
+# usually works, but if Gazebo crashes on startup or renders a black window,
+# switch this to "ogre" (the older renderer, far less demanding). Applies to
+# both the GUI view and any camera sensor on your vehicle.
+render:
+  engine: ogre2
+
+# --- Camera the GUI opens on ------------------------------------------------
+# auto: frame the whole parkur from the south, looking down at ~45 degrees. The
+# pose is recomputed every generation, so it keeps working when the layout
+# changes. Set auto to false to pin it by hand.
+gui:
+  camera_auto: true
+  camera_elevation: 0.62     # standoff height as a fraction of the track span
+  camera_pose: [-42.0, -45.0, 60.0, 0.0, 0.85, 1.5708]   # used when auto: false
+
+# --- Global track geometry ---------------------------------------------------
+track:
+  road_width: 3.0            # S6.1  "Yol genisligi 3 metre olacaktir."
+  straight_length: 20.0      # S6.1  "Duzluk parkur bolumleri 20 metre uzunlugunda."
+  row_length: 70.0           # OURS  all three rows are exactly this long, which
+                             #       is what makes the layout match Sekil 1.
+                             #       Must be >= the longest row's fixed content
+                             #       (row a: 10 + 20 + 20 + 20 = 70).
+  barrier_height: 0.80       # S6.1  "80 cm +/- 10 cm yuksekliginde"
+  barrier_thickness: 0.10    # OURS  not specified; thin enough to be realistic
+  barrier_arc_step_deg: 9.0  # OURS  angular step through the turns. At R=6.5 m
+                             #       this puts the road edge within 2 cm of a
+                             #       true arc, and keeps the link count sane.
+  turn_radius: 6.5           # OURS  centerline radius. Inner edge lands at 5.0 m,
+                             #       matching the 5 m turning radius the vehicle
+                             #       must achieve per S7.4.
+  surface_thickness: 0.20    # OURS  road slabs are boxes, not infinite planes,
+                             #       so Phase 4 can cut a hole for the water pit.
+  tile_length: 4.0           # OURS  slab length along travel on straights. Every
+                             #       slab is a separate render batch, so this
+                             #       trades geometry count against how finely the
+                             #       surface can follow a slope. Constant-grade
+                             #       ramps stay exact at any value.
+  surface_lip: 0.02          # OURS  road top sits 2 cm above the surrounding
+                             #       ground. Without this the two surfaces are
+                             #       coplanar and z-fight into a flickering mess.
+  overlap: 1.02              # OURS  slabs and barriers are drawn this much longer
+                             #       than the gap they span, so no seams open up
+                             #       on the outside of a curve.
+
+# --- Segment order -----------------------------------------------------------
+# The parkur as an ordered chain, walked from the start line. This IS the track:
+# reorder, lengthen or delete entries here and the road, the barriers and (from
+# Phase 3) every obstacle move with it.
+#
+# Sekil 1 is a serpentine: three rows of EQUAL length joined by two 180 degree
+# turns at opposite ends, so the turns have opposite handedness.
+#
+#   row a  heading west   start -> [1] su gecisi -> [2] duzluk -> [3] yan egim
+#   turn 1 west end, right-hand
+#   row b  heading east   [4] dik engel -> [5] koniler -> [6] kayar engel
+#   turn 2 east end, left-hand
+#   row c  heading west   [7] engebeli -> [8] cikis -> [9] atis -> [10] inis -> bitis
+#
+# The stages have lengths fixed by the sartname and they do NOT add up equally
+# across the three rows. `kind: pad` segments absorb the difference: the
+# generator shares each row's leftover between its pads so every row comes out
+# exactly track.row_length. Edit a stage length and the pads re-balance.
+layout:
+  # -- row a: 10 + 20 + 20 + 20 = 70, exactly full, no padding needed ---------
+  - {id: start,     row: a, kind: straight, length: 10.0, label: "baslangic"}
+  - {id: s1_water,  row: a, kind: straight, length: 20.0, stage: 1,  label: "su gecisi ve yagmur"}
+  - {id: s2_flat,   row: a, kind: straight, length: 20.0, stage: 2,  label: "cakilli / tasli yol"}
+  - {id: s3_bank,   row: a, kind: straight, length: 20.0, stage: 3,  label: "yan egim"}
+
+  - {id: turn1,     kind: arc, turn: right, sweep_deg: 180, label: "viraj 1"}
+
+  # -- row b: 60 fixed, 10 shared between two pads ---------------------------
+  - {id: pad_b1,    row: b, kind: pad}
+  - {id: s4_block,  row: b, kind: straight, length: 20.0, stage: 4,  label: "dik engel"}
+  - {id: s5_cones,  row: b, kind: straight, length: 20.0, stage: 5,  label: "trafik konileri"}
+  - {id: s6_slider, row: b, kind: straight, length: 20.0, stage: 6,  label: "kayar engel"}
+  - {id: pad_b2,    row: b, kind: pad}
+
+  - {id: turn2,     kind: arc, turn: left, sweep_deg: 180, label: "viraj 2"}
+
+  # -- row c: 40 fixed, 30 shared between two pads ---------------------------
+  # Both pads sit BEFORE the descent, so they cannot disturb the atis distance,
+  # which depends only on s10_down + finish + target.gap_beyond_road.
+  - {id: pad_c1,    row: c, kind: pad}
+  - {id: s7_bumps,  row: c, kind: straight, length: 20.0, stage: 7,  label: "engebeli arazi"}
+  - {id: pad_c2,    row: c, kind: pad}
+  - {id: s8_up,     row: c, kind: straight, length: 5.0,  stage: 8,  label: "dik egim - cikis"}
+  - {id: s9_plat,   row: c, kind: straight, length: 6.0,  stage: 9,  label: "atis bolgesi"}
+  - {id: s10_down,  row: c, kind: straight, length: 5.0,  stage: 10, label: "dik egim - inis"}
+  # bitis length is NOT free: it sets how far the target ends up from the firing
+  # plateau. See the target block below - the generator checks the arithmetic.
+  - {id: finish,    row: c, kind: straight, length: 4.0,  label: "bitis"}
+
+# --- Ground -----------------------------------------------------------------
+# The start line sits at the world origin (0, 0) heading west, which makes it a
+# convenient spawn pose for your vehicle. That means the track is NOT centred on
+# the origin, so the ground is fitted to the track's bounding box rather than
+# being a big square around (0, 0).
+ground:
+  auto_fit: true             # size and centre the ground on the actual track
+  margin: 15.0               # apron beyond the outermost barrier
+  min_size_x: 60.0           # floor, so a tiny test layout still gets a field
+  min_size_y: 60.0
+  thickness: 1.0
+  friction: 1.0
+
+# --- Stage signage ----------------------------------------------------------
+# S6.2 "dis capi 60 cm olan tabelalar", font 'Arial Black'. Autonomous run
+# detects these to know which stage it has reached. Built in Phase 6.
+signs:
+  count: 11                  # 1-10 on the main track, 11 on the drag strip.
+                             #       The strip's finish plate is not a 12th
+                             #       number: it is 11 again with a red slash
+                             #       through it. See accel_strip.sign_start.
+  outer_diameter: 0.60       # S6.2  "dis capi 60 cm olan tabelalar". The plate
+                             #       is a real disc mesh of this diameter, not a
+                             #       square with a circle drawn on it.
+  ring_width: 0.075          # OURS  thickness of the red annulus, scaled off
+                             #       Sekil 2
+  plate_thickness: 0.03
+  post_height: 1.30          # OURS  height of the plate CENTRE above the road
+  post_radius: 0.045
+  lateral_offset: 0.55       # OURS  from the barrier outer face to the post
+  side: right                # OURS  which side of travel the signs stand on
+  texture_px: 1024           # OURS  raise this to mint CV training data
+
+# --- Stage 1: Su gecisi ve yagmur (S6.3) ------------------------------------
+# Rain omitted by user request; the 40 cm water crossing is kept with buoyancy.
+water:
+  depth: 0.40                # S6.3  "40 cm derinligindeki sudan"
+  length: 8.0                # OURS  flat pool floor; sartname gives no length
+  bank_slope_length: 1.5     # S6.3  ramped entry and exit, 26.7 % / 15 deg.
+                             #       Sekil 3 draws the pit with sloped banks on
+                             #       both sides; this is that slope. The length
+                             #       is ours, since the figure is undimensioned
+                             #       horizontally.
+  wall_thickness: 0.40       # OURS  basin retaining wall
+  wall_overlap: 0.03         # OURS  how far the wall tucks BEHIND the barrier.
+                             #       Must be > 0: at exactly 0 the wall's inner
+                             #       face and the barrier's outer face are
+                             #       coplanar, which z-fights. Leaving a gap
+                             #       instead opens a slot into the void below.
+  enable_buoyancy: true
+  fluid_density: 1000.0      # OURS  fresh water
+  rain: false                # user: not needed
+
+# --- Stage 2: Cakilli / tasli yol (S6.4) ------------------------------------
+# User dropped the loose stones. Segment is kept as a flat named zone so the
+# stage ordering and all downstream distances stay correct, and so sign #2
+# still exists for the detection model.
+gravel:
+  enabled: false
+  max_stone_diameter: 0.05   # S6.4  "en buyugu 5 cm capa sahip"
+  length: 20.0
+
+# --- Stage 3: Yan egim (S6.5) -----------------------------------------------
+side_slope:
+  grade_percent: 20.0        # S6.5  "% 20'luk bir yan egim"
+  length: 20.0               # OURS
+  ramp_in_length: 3.0        # OURS  transition on/off the bank
+
+# --- Stage 4: Dik engel (S6.6) ----------------------------------------------
+vertical_block:
+  height: 0.15               # S6.6  "15 cm yuksekligindeki dik blok engel"
+  depth: 0.60                # OURS  along travel direction
+
+# --- Stage 5: Trafik konileri (S6.7) ----------------------------------------
+cones:
+  base: 0.40                 # S6.7  "40 cm +/- 10 cm x 40 +/- 10 cm kare tabanli"
+  height: 0.75               # S6.7  "75 cm +/- 5 cm yukseklikte"
+  count: 10                  # OURS  S6.7 says judges decide placement at the event
+  slalom_offset: 0.85        # OURS  lateral swing of the slalom
+  jitter: 0.12               # OURS  seeded scatter on both axes
+  tiers: 4                   # OURS  a cone is a stack of tapering boxes. Exact
+                             #       box collision, no mesh dependency, and it
+                             #       still reads as a cone to a camera.
+  margin: 2.0                # OURS  clear space at each end of the zone
+  dynamic: true              # OURS  S6.7 scores a cone TOUCH at -5 points and
+                             #       says nothing about moving one, because a
+                             #       real cone simply falls over. Static cones
+                             #       are immovable bollards that can snag a
+                             #       wheel or push the vehicle off line, which
+                             #       is harsher than the event. Cost is 10
+                             #       dynamic bodies of 5 collision boxes each;
+                             #       set false to pin them if that hurts the
+                             #       real-time factor on your machine.
+  mass: 0.8                  # OURS  a real plastic cone, light enough to tip
+                             #       from a nudge. Only used when dynamic.
+                             #       Inertia is computed from the box stack,
+                             #       so the centre of mass sits low in the base
+                             #       plate and the cone stands up on its own.
+
+# --- Stage 6: Kayar engel (S6.8) --------------------------------------------
+slider:
+  width: 1.0                 # S6.8  "genisligi 1 metre olan"
+  height: 0.80               # OURS  tall enough to matter to sensors
+  thickness: 0.20            # OURS  along the direction of travel
+  speed: 0.20                # S6.8  "20 cm/s hizla surekli rejimde git-gel"
+  travel: 4.0                # S6.8  "tamamen parkurun disina cikabilen" -- to
+                             #       fully clear a 3 m road, a 1 m blade needs
+                             #       3.0 + 1.0 = 4.0 m peak to peak. The
+                             #       generator recomputes this and warns if the
+                             #       configured value is short.
+  ground_clearance: 0.02     # OURS  blade floats 2 cm so it does not grind
+                             #       along the road as it slides
+  barrier_gap: 0.60          # OURS  slot in the barrier for the blade to pass
+                             #       through. S6.1 wants continuous barriers,
+                             #       but S6.8 requires the blade to leave the
+                             #       parkur entirely, and both cannot be true.
+                             #       Kept as narrow as the mechanism allows.
+  mass: 40.0                 # OURS
+  post_size: 0.25            # OURS  end posts, outside the barrier line
+  publish_rate: 50.0         # OURS  driver command rate. Overshoot at a
+                             #       reversal is speed/rate = 4 mm.
+
+# --- Stage 7: Engebeli arazi (S6.9) -----------------------------------------
+# S6.9 penalises "aracin tamaminin ayni tumsek dizisi uzerinden gecirilmesi" --
+# taking the WHOLE vehicle over the same bump series. That only makes sense if
+# the bumps form separate left and right series rather than full-width ridges,
+# so the vehicle straddles them and articulates. Sekil 1 draws exactly that: a
+# scattered grid of small blocks, not ridges across the road.
+bumps:
+  height: 0.05               # Sekil 4  "5 cm"
+  base_width: 0.20           # Sekil 4  "20 cm"
+  top_width: 0.13            # Sekil 4  trapezoid top edge. Not dimensioned in
+                             #       the figure, so it is measured off it: the
+                             #       20 cm arrow spans exactly the base corners,
+                             #       and the top edge is 0.653 of that span at
+                             #       432 dpi -> 13.1 cm. Read as a ratio, so the
+                             #       drawing's vertical scale error (the 5 cm
+                             #       label measures 4.3) does not enter it.
+                             #       Gives a 55 deg chamfer, not the 45 deg a
+                             #       10 cm top would.
+  span: 0.80                 # OURS  width of one bump across the road
+  series_offset: 0.70        # OURS  lateral offset of each series from centre
+  rows: 14                   # OURS  S6.9 says judges decide count and placement
+  row_spacing: 1.2           # OURS  along-travel gap within one series
+  stagger: true              # OURS  right series sits half a spacing behind the
+                             #       left one, so the vehicle rocks rather than
+                             #       hitting both sides at once
+  jitter: 0.10               # OURS  random along-travel scatter, seeded
+
+# --- Stages 8-10: Dik egimler ve atis (S6.10) -------------------------------
+ramp:
+  grade_percent: 45.0        # S6.10 "% 45 egimde cikis ve inisten"
+  run_length: 5.0            # OURS  horizontal run of each slope -> 2.25 m rise.
+                             #       Must match layout s8_up / s10_down.
+  plateau_length: 6.0        # OURS  flat top, holds the firing position
+  stop_line_offset: 2.5      # OURS  where the 2 s stop mark sits along the slope
+  stop_line_width: 0.10      # OURS
+  stop_sign_climb: "STOP"    # OURS  S6.10 requires the 2 s stop but does not
+  stop_sign_descent: "DUR"   #       specify a plate beside the line, and does
+                             #       not settle the wording either. One of each
+                             #       until the judges publish which they use --
+                             #       swap both to the same string once known.
+                             #       Round 60 cm plates, white on red, standing
+                             #       on the LEFT of travel: the S6.2 stage
+                             #       tabelalar are all on the right, so a plate
+                             #       that means "act now" never appears on the
+                             #       same side as one that means "you are here".
+                             # NOTE: the stop marks are painted ON the slope, not
+                             # on flat pads. S6.10 describes a continuous %45
+                             # climb and descent, and S7.5 requires the brakes to
+                             # hold on exactly that grade, so flattening the stop
+                             # points would remove the thing being tested.
+
+target:
+  # Placement follows Sekil 1, where 'bitis' and 'hedef' sit next to each other
+  # at the far end of the road: the target stands on the road centre axis, just
+  # past the end of the track, and the vehicle fires straight down the road at
+  # it from the plateau.
+  #
+  # The distance is therefore not a free parameter. It is fixed by geometry:
+  #
+  #     distance = ramp.run_length  (descent)
+  #              + layout.finish.length
+  #              + gap_beyond_road
+  #
+  # measured from the LEADING edge of the plateau, which is where the vehicle
+  # sits when it fires. With run_length 5.0 + finish 4.0 + gap 1.0 that lands on
+  # exactly 10 m, the S6.10 minimum. generate.py recomputes and warns if an edit
+  # to any of those three pushes it under 10 m.
+  #
+  # The cost of a 10 m shot is a short bitis run-out (4 m). Lengthen `finish` if
+  # you would rather have room to stop after the descent, and accept a longer
+  # shot: every extra metre of bitis is an extra metre of range.
+  distance: 10.0             # S6.10 "minimum 10 metre uzaklikta"
+  gap_beyond_road: 1.0       # OURS  clearance between road end and target post
+                             # The target is ALWAYS inline: it stands on the
+                             # road axis just past the bitis line, as Sekil 1
+                             # draws it. There is no lateral variant, because
+                             # moving it off the axis would change the S6.10
+                             # range without changing this file's `distance`.
+  level_with_vehicle: true   # target centre at plateau height, so the shot is
+                             # horizontal rather than angled down. Only `true`
+                             # is implemented; generate.py stops if it is false
+                             # rather than quietly firing at a different height.
+  # A3 LANDSCAPE. Sekil 5 is drawn wider than tall (its axes run -18..+18
+  # horizontally against -12..+12 vertically), so the sheet is turned on its
+  # side relative to the portrait A3 you would print by default.
+  paper_w: 0.420             # S6.10 A3 long edge, horizontal
+  paper_h: 0.297             # S6.10 A3 short edge, vertical
+  ring_inner_d: 0.06         # Sekil 5  ic daire, 50 puan
+  ring_mid_d: 0.12           # Sekil 5  orta halka, 25 puan
+  ring_outer_d: 0.18         # Sekil 5  dis halka, 15 puan
+  aim_height: 0.60           # OURS  assumed height of your laser above the
+                             #       ground it stands on. With
+                             #       level_with_vehicle the target centre sits
+                             #       at plateau height + this, so the shot is
+                             #       horizontal rather than angled down.
+  frame_margin: 0.05         # S6.10 "bir cerceveye oturtulmus"
+  post_radius: 0.05
+  texture_px: 2048           # OURS  the thing your aiming camera has to resolve
+
+# --- Hizlanma parkuru (S6.11) -----------------------------------------------
+accel_strip:
+  length: 30.0               # S6.11 "30 metre boyunca"
+  stop_zone: 10.0            # S6.11 "10 metrelik guvenli ve emniyetli durma mesafesi"
+  lanes: 4                   # OURS  S6.11 leaves the count to the organisers:
+                             #       "toplam katilimci takim sayisi nezdinde"
+  lane_width: 3.0            # OURS  same as the main road
+  offset_y: 12.0             # OURS  gap from the northern row's centreline to
+                             #       the south edge of the strip
+  line_width: 0.15           # OURS  painted start / finish lines
+  sign_start: 11             # OURS  Sekil 1 marks both ends of the strip. BOTH
+                             #       plates carry this number: the start line
+                             #       gets it plain and the finish line gets the
+                             #       same number struck through with a red
+                             #       diagonal, cancelling it the way an
+                             #       end-of-restriction sign cancels the sign
+                             #       that opened the section. There is no
+                             #       twelfth number. 11 continues the
+                             #       main-track sequence; change it if the
+                             #       judges publish something different.
+
+# --- Randomisation ----------------------------------------------------------
+# S6.7 and S6.9 both state the judges fix the layout on competition day, so
+# cone and bump arrangements are seedable rather than hardcoded.
+random:
+  seed: 2026
